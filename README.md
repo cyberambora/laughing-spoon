@@ -1,8 +1,4 @@
-Of course\! Here is a concise and user-friendly `README.md` generated from your shell script.
-
------
-
-# Auto-Pentest Suite 🕵️‍♂️
+# Laughing Spoon 🕵️‍♂️
 
 A simple but powerful bash script that automates the initial reconnaissance and vulnerability scanning phases of a web application penetration test against a target website.
 
