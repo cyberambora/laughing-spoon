@@ -82,11 +82,11 @@ RESULTS_DIR=$OUTPUT_DIR
 echo -e "${GREEN}[*] Generating structured Markdown findings...${NC}"
 
 # Generate report
-./pentest_report.sh "$TARGET" "$RESULTS_DIR"
+./report.sh "$TARGET" "$RESULTS_DIR"
 
 echo -e "${GREEN}[*] All tasks completed. Report is located in $OUTPUT_DIR/report.md${NC}"
 
-./pentest_report_html.sh "$TARGET" "$RESULTS_DIR"
+./report_html.sh "$TARGET" "$RESULTS_DIR"
 
 echo -e "${GREEN}[*] HTML report generated at $RESULTS_DIR/report.html${NC}"
 
