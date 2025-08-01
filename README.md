@@ -27,20 +27,18 @@ sudo apt-get update && sudo apt-get install nmap whatweb nikto gobuster sqlmap h
 
 The script also depends on two external reporting scripts which it calls at the end. Make sure these files are in the same directory:
 
-  * `pentest_report.sh`
-  * `pentest_report_html.sh`
+  * `report_md.sh`
+  * `report_html.sh`
 
 -----
 
 ## 🚀 Setup & Usage
 
-1.  **Make the script executable:**
+1.  **Make the shell script executable:**
 
     ```bash
-    chmod +x your_script_name.sh
+    chmod +x laughing_spoon.sh report_md.sh report_html.sh
     ```
-
-    *(Replace `your_script_name.sh` with the actual filename)*
 
 2.  **Create a username list:** The script requires a file named `usernames.txt` for the Hydra brute-force attack. Create this file in the same directory and add one potential username per line.
 
