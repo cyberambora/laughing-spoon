@@ -52,7 +52,7 @@ The script also depends on two external reporting scripts which it calls at the 
 3.  **Run the scan:** Execute the script with `sudo` (required for downloading `rockyou.txt` if it's missing) and provide the target hostname as an argument.
 
     ```bash
-    sudo ./your_script_name.sh target-website.com
+    sudo ./laughing_spoon.sh target-website.com
     ```
 
     **Note:** Do not include `http://` or `https://` in the target hostname.
