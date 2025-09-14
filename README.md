@@ -1,21 +1,21 @@
-# Laughing Spoon 🕵️‍♂️
+# Laughing Spoon
 
 A simple but powerful bash script that automates the initial reconnaissance and vulnerability scanning phases of a web application penetration test against a target website.
 
-## ✨ Features
+## Features
 
 This script chains together several popular open-source security tools to perform a comprehensive initial scan:
 
-  * **🌐 Port Scanning:** Uses **Nmap** to discover open ports and running services.
-  * **🔍 Tech Stack Identification:** Uses **WhatWeb** to identify the technologies used by the web application (CMS, frameworks, server, etc.).
-  * **💣 Vulnerability Scanning:** Uses **Nikto** to check for common web server vulnerabilities and misconfigurations.
-  * **📂 Directory Brute-Forcing:** Uses **Gobuster** to discover hidden directories and files.
-  * **💉 SQL Injection Testing:** Uses **SQLmap** to automatically crawl the site and test forms for SQL injection vulnerabilities.
-  * **🔑 Login Brute-Forcing:** Uses **Hydra** to attempt to brute-force a login form.
+  * **Port Scanning:** Uses **Nmap** to discover open ports and running services.
+  * **Tech Stack Identification:** Uses **WhatWeb** to identify the technologies used by the web application (CMS, frameworks, server, etc.).
+  * **Vulnerability Scanning:** Uses **Nikto** to check for common web server vulnerabilities and misconfigurations.
+  * **Directory Brute-Forcing:** Uses **Gobuster** to discover hidden directories and files.
+  * **SQL Injection Testing:** Uses **SQLmap** to automatically crawl the site and test forms for SQL injection vulnerabilities.
+  * **Login Brute-Forcing:** Uses **Hydra** to attempt to brute-force a login form.
 
 -----
 
-## 🛠️ Prerequisites
+## Prerequisites
 
 Before running the script, you need to have the necessary tools installed.
 
@@ -32,7 +32,7 @@ The script also depends on two external reporting scripts which it calls at the 
 
 -----
 
-## 🚀 Setup & Usage
+## Setup & Usage
 
 1.  **Make the shell script executable:**
 
@@ -59,7 +59,7 @@ The script also depends on two external reporting scripts which it calls at the 
 
 -----
 
-## 📋 Output
+## Output
 
 All findings and log files are saved in a new directory named `results_<target-hostname>`.
 
@@ -70,6 +70,6 @@ Upon completion, the script generates two summary reports inside this directory:
 
 -----
 
-## ⚠️ Disclaimer
+## Disclaimer
 
 This script is intended for **educational purposes and for use on authorized systems only**. Unauthorized scanning of websites is illegal. The author is not responsible for any misuse or damage caused by this script. **Always obtain explicit permission before scanning any target.**
