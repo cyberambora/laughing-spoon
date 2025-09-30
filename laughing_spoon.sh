@@ -8,8 +8,8 @@
 
 TARGET=$1
 OUTPUT_DIR="results_$TARGET"
-WORDLIST_DIR="/usr/share/wordlists"
-CURRENT_WORDLIST="$WORDLIST_DIR/wordlist-current.txt"
+WORDLIST_DIR="/usr/share/wordlists/dirb"
+CURRENT_WORDLIST="$WORDLIST_DIR/common.txt"
 LOGIN_URL="http://$TARGET/login-submit"
 USERNAME_LIST="usernames.txt"
 
