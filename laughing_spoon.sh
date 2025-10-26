@@ -3,7 +3,9 @@
 # ================================================
 # Auto Pentest Script for Local Websites
 # Tools: nmap, whatweb, nikto, gobuster, sqlmap, hydra
-# Author: cyberambora dchunterops@gmail.com
+# Author: cyberambora https://github.com/cyberambora/
+# licence: MIT 
+# Version: 1.2
 # ================================================
 
 TARGET=$1
@@ -98,7 +100,6 @@ echo -e "${GREEN}[6] Brute-force login with Hydra...${NC}"
 
 echo -e "${GREEN}[6] Brute-force login with Hydra...${NC}"
 
-# --- NEW: SMART LOGIN ANALYSIS ---
 # This function performs a manual login attempt and analyzes the FULL response
 # to determine reliable success (S) and failure (F) patterns for Hydra.
 analyze_login() {
