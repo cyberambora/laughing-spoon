@@ -1,11 +1,12 @@
 #!/bin/bash
 
 # ================================================
-# Auto Pentest Script for Local Websites
+# Auto Pentest Script for Local Websites (POC v2.0)
+# Emulates the iterative, human-guided workflow from the POC diagram.
 # Tools: nmap, whatweb, nikto, gobuster, sqlmap, hydra
-# Author: cyberambora https://github.com/cyberambora/
-# licence: MIT 
-# Version: 1.2
+# Author: cyberambora https://github.com/cyberambora/  
+# Licence: MIT 
+# Version: 2.0
 # ================================================
 
 TARGET=$1
@@ -17,7 +18,28 @@ USERNAME_LIST="usernames.txt"
 
 # Colors
 GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+RED='\033[0;31m'
 NC='\033[0m'
+
+# Load target context if available
+load_target_context() {
+  local context_file="target_context.json"
+  if [[ -f "$context_file" ]]; then
+    echo "[*] Loading target context from $context_file"
+    FRAMEWORK=$(jq -r '.framework' "$context_file" 2>/dev/null)
+    if [[ $? -eq 0 && -n "$FRAMEWORK" ]]; then
+      echo "[*] Target identified as: $FRAMEWORK"
+    else
+      echo "[!] Could not parse framework from context file."
+    fi
+  else
+    echo "[*] No target context file found. Proceeding without context-aware filtering."
+  fi
+}
+
+# Call it after setting up variables
+load_target_context
 
 if [[ -z "$TARGET" ]]; then
   echo "Usage: $0 <target-hostname>"
@@ -27,7 +49,7 @@ fi
 mkdir -p "$OUTPUT_DIR"
 
 # ==================================================
-# Wordlist Management
+# Wordlist Management & Dynamic Adaptation
 # ==================================================
 declare -A WORDLISTS=(
   ["rockyou"]="$WORDLIST_DIR/rockyou.txt"
@@ -61,44 +83,112 @@ PASSWORD_WORDLIST="$CURRENT_WORDLIST"
 if [[ "$WL_CHOICE" == "rockyou" && ! -f "$WORDLIST_DIR/rockyou.txt" ]]; then
     echo "[!] rockyou.txt not found – fetching a clean copy …"
     curl -L -o "$WORDLIST_DIR/rockyou.txt" \
-         https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Leaked-Databases/rockyou.txt
+         https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Leaked-Databases/rockyou.txt  
     sudo chmod 644 "$WORDLIST_DIR/rockyou.txt"
 fi
 
-# Determine the fail-string dynamically (fallback to "Invalid")
-echo "[*] Probing login form to detect failure string …"
-FAIL_STRING=$(curl -s -d "username=wrong&password=wrong" "$LOGIN_URL" | \
-              grep -i -o 'Invalid\|incorrect\|failed\|error' | head -1 || echo "Invalid")
-              
+# ==================================================
+# PHASE 1: Initial Recon & Human Operator Input
+# ==================================================
+echo -e "${GREEN}[*] PHASE 1: Initial Recon - Human operator provides target.${NC}"
+echo "[*] Target set to: $TARGET"
+echo "[*] Starting initial scan to gather baseline data..."
+
+# Initial Nmap Scan (Phase 2 equivalent)
 echo -e "${GREEN}[1] Scanning with nmap...${NC}"
 nmap -sS -sV -p- -oN "$OUTPUT_DIR/nmap.txt" "$TARGET"
 
+# WhatWeb Fingerprinting
 echo -e "${GREEN}[2] Fingerprinting with WhatWeb...${NC}"
 whatweb -v "http://$TARGET" > "$OUTPUT_DIR/whatweb.txt"
 
+# Nikto Vulnerability Scan
 echo -e "${GREEN}[3] Vulnerability scanning with Nikto...${NC}"
 nikto -h "http://$TARGET" -output "$OUTPUT_DIR/nikto.txt"
 
-echo -e "${GREEN}[4] Directory brute-forcing with Gobuster...${NC}"
-if command -v gobuster &>/dev/null; then
-  if [[ ! -f "$PASSWORD_WORDLIST" ]]; then
-    echo "[!] Wordlist not found at: $PASSWORD_WORDLIST"
-    echo "[!] Skipping Gobuster scan."
-  elif [[ -f "$OUTPUT_DIR/gobuster.txt" ]]; then
-    echo "[*] Gobuster output already exists. Skipping..."
-  else
-    gobuster dir -u "http://$TARGET" -w "$PASSWORD_WORDLIST" -o "$OUTPUT_DIR/gobuster.txt"
-  fi
+# ==================================================
+# PHASE 2: Data Analysis & Human Review (The Core Loop)
+# ==================================================
+echo -e "${GREEN}[*] PHASE 2: Findings recorded and analyzed. Human reviews summary.${NC}"
+
+# Generate a quick summary for the human operator
+echo "=== INITIAL FINDINGS SUMMARY ===" > "$OUTPUT_DIR/phase2_summary.txt"
+echo "Target: $TARGET" >> "$OUTPUT_DIR/phase2_summary.txt"
+echo "" >> "$OUTPUT_DIR/phase2_summary.txt"
+
+echo "Nmap Top Ports:" >> "$OUTPUT_DIR/phase2_summary.txt"
+grep -E "^(open|filtered)" "$OUTPUT_DIR/nmap.txt" | head -10 >> "$OUTPUT_DIR/phase2_summary.txt"
+echo "" >> "$OUTPUT_DIR/phase2_summary.txt"
+
+echo "WhatWeb Technologies:" >> "$OUTPUT_DIR/phase2_summary.txt"
+grep -E "^(CMS|Framework|Server|X-Powered-By)" "$OUTPUT_DIR/whatweb.txt" | head -5 >> "$OUTPUT_DIR/phase2_summary.txt"
+echo "" >> "$OUTPUT_DIR/phase2_summary.txt"
+
+# Inside the PHASE 2 summary generation...
+echo "Nikto Critical Issues (POTENTIAL FALSE POSITIVES):" >> "$OUTPUT_DIR/phase2_summary.txt"
+
+NIKTO_CRITICAL=$(grep -i -E "(critical|high|error)" "$OUTPUT_DIR/nikto.txt" | head -5)
+
+if [[ -n "$NIKTO_CRITICAL" ]]; then
+    echo "$NIKTO_CRITICAL" >> "$OUTPUT_DIR/phase2_summary.txt"
+    
+    # Check for common framework misidentifications
+    if echo "$NIKTO_CRITICAL" | grep -q -i "xoops"; then
+        echo "[!] WARNING: Nikto detected 'Xoops' related issues. Since your target is '$FRAMEWORK', this is likely a FALSE POSITIVE." >> "$OUTPUT_DIR/phase2_summary.txt"
+        echo "    Please verify manually by checking the source code or page structure." >> "$OUTPUT_DIR/phase2_summary.txt"
+    fi
+    
+    if echo "$NIKTO_CRITICAL" | grep -q -i "wordpress"; then
+        echo "[!] WARNING: Nikto detected 'WordPress' related issues. Since your target is '$FRAMEWORK', this is likely a FALSE POSITIVE." >> "$OUTPUT_DIR/phase2_summary.txt"
+        echo "    Please verify manually by checking the source code or page structure." >> "$OUTPUT_DIR/phase2_summary.txt"
+    fi
+
 else
-  echo "[!] Gobuster not found. Skipping directory brute-force."
+    echo "No critical issues found by Nikto." >> "$OUTPUT_DIR/phase2_summary.txt"
 fi
 
-echo -e "${GREEN}[5] SQLi testing with sqlmap...${NC}"
-sqlmap -u "$LOGIN_URL" --batch --forms --crawl=1 --output-dir="$OUTPUT_DIR/sqlmap" --risk=3 --level=5 --random-agent
+# ==================================================
+# PHASE 3: Iterative Vulnerability Scan Based on Findings
+# ==================================================
+echo -e "${GREEN}[*] PHASE 3: Directs an iterative vulnerability scan based on findings.${NC}"
 
-echo -e "${GREEN}[6] Brute-force login with Hydra...${NC}"
+# Determine next steps based on initial findings
+echo "[*] Analyzing findings to direct next phase..."
 
-echo -e "${GREEN}[6] Brute-force login with Hydra...${NC}"
+# Check for web server and potential directories
+WEB_SERVER=$(grep -E "Server:|Apache|Nginx|IIS" "$OUTPUT_DIR/whatweb.txt" | head -1)
+if [[ -n "$WEB_SERVER" ]]; then
+  echo "[*] Web server detected: $WEB_SERVER"
+  # Run Gobuster only if we have a wordlist and it's not already run
+  if command -v gobuster &>/dev/null; then
+    if [[ ! -f "$PASSWORD_WORDLIST" ]]; then
+      echo "[!] Wordlist not found at: $PASSWORD_WORDLIST"
+      echo "[!] Skipping Gobuster scan."
+    elif [[ -f "$OUTPUT_DIR/gobuster.txt" ]]; then
+      echo "[*] Gobuster output already exists. Skipping..."
+    else
+      echo -e "${GREEN}[4] Directory brute-forcing with Gobuster...${NC}"
+      gobuster dir -u "http://$TARGET" -w "$PASSWORD_WORDLIST" -o "$OUTPUT_DIR/gobuster.txt"
+    fi
+  else
+    echo "[!] Gobuster not found. Skipping directory brute-force."
+  fi
+fi
+
+# Check for SQL injection potential
+SQL_INJECTION_HINTS=$(grep -i -E "(sql|database|query|error)" "$OUTPUT_DIR/nikto.txt" | wc -l)
+if [[ $SQL_INJECTION_HINTS -gt 0 ]]; then
+  echo "[*] Potential SQL injection hints found ($SQL_INJECTION_HINTS). Running sqlmap..."
+  echo -e "${GREEN}[5] SQLi testing with sqlmap...${NC}"
+  sqlmap -u "$LOGIN_URL" --batch --forms --crawl=1 --output-dir="$OUTPUT_DIR/sqlmap" --risk=3 --level=5 --random-agent
+else
+  echo "[*] No strong SQL injection hints found. Skipping sqlmap for now."
+fi
+
+# ==================================================
+# PHASE 4 & 5: Exploitation, Validation, and Data Exfiltration
+# ==================================================
+echo -e "${GREEN}[*] PHASES 4 & 5: Internal recon, obtains credentials, accesses data, attempts exploits, validates callbacks.${NC}"
 
 # This function performs a manual login attempt and analyzes the FULL response
 # to determine reliable success (S) and failure (F) patterns for Hydra.
@@ -172,6 +262,10 @@ if command -v hydra &>/dev/null; then
             REDIRECT_TARGET=$(echo "$LOGIN_RESPONSE" | grep -i "^Location:" | head -1 | awk '{print $2}' | tr -d '\r')
             echo "[+] MANUAL VERIFICATION SUCCESSFUL: Login with '$LOGIN:$PASSWORD' redirects to: $REDIRECT_TARGET"
             echo "[+] This appears to be a valid credential pair."
+            
+            # If successful, add this to a new file for further exploitation
+            echo "$LOGIN:$PASSWORD" > "$OUTPUT_DIR/valid_credentials.txt"
+            
         else
             # Check if the failure string is present
             if echo "$LOGIN_RESPONSE" | grep -q -i "$LOCAL_FAIL_STRING"; then
@@ -194,7 +288,7 @@ else
 fi
 
 # ==================================================
-# 7. Final Results
+# Final Results & Human Review Loop
 # ==================================================
 RESULTS_DIR=$OUTPUT_DIR
 echo -e "${GREEN}[*] Generating structured Markdown findings...${NC}"
@@ -206,3 +300,21 @@ echo -e "${GREEN}[*] All tasks completed. Report is located in $OUTPUT_DIR/repor
 ./report_html.sh "$TARGET" "$RESULTS_DIR"
 
 echo -e "${GREEN}[*] HTML report generated at $RESULTS_DIR/report.html${NC}"
+
+echo -e "${YELLOW}[*] PHASE 5 COMPLETE: Human operator should now review the final report and decide on further action.${NC}"
+echo "Review the report at $OUTPUT_DIR/report.html"
+echo "If more exploitation is needed, re-run this script with additional parameters or use the discovered credentials for manual testing."
+
+# Optional: Add a loop for continuous improvement based on human feedback
+echo ""
+echo "Would you like to initiate another round of scanning based on new findings? (y/N)"
+read -p "Enter choice: " CONTINUE
+if [[ "$CONTINUE" =~ ^[Yy]$ ]]; then
+  echo "[*] Initiating another round of scanning..."
+  # Here you could implement logic to adjust the scan based on previous results
+  # For example, if sqlmap found a vulnerable parameter, you could run a more targeted scan
+  # This is where the true "iterative" nature of the POC would come into play.
+  echo "[*] This feature is currently a placeholder. In a real implementation, you would parse the report and adjust the scan accordingly."
+fi
+
+echo -e "${GREEN}[*] Pentest session ended. Thank you for using Auto Pentest Script v2.0${NC}"
