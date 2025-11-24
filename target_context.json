@@ -1,0 +1,10 @@
+{
+  "target": "targeted_website",
+  "framework": "Custom PHP MVC",
+  "known_false_positives": [
+    "xoops",
+    "wordpress",
+    "drupal",
+    "joomla"
+  ]
+}
